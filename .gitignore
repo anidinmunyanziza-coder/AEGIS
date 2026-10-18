@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# vaults and keyfiles are secrets - never commit them
+*.ags
+*.ags.tmp
+*.kf
+demo_tampered.ags

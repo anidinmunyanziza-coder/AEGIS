@@ -1,0 +1,1690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aegis Vault</title>
+<link rel="icon" href="data:,">
+<script nonce="__AEGIS_NONCE__">
+/* Intro gate — runs before first paint so the ceremony never flashes.
+   Plays on first visit ever, or when the URL carries "replay".
+   Skips entirely under prefers-reduced-motion. */
+(function () {
+  try {
+    var replay = /(?:\?|&|#)replay\b/.test(location.href);
+    var seen = localStorage.getItem("aegis-intro");
+    var rm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (rm || (seen && !replay)) return;
+    document.documentElement.classList.add("intro-on");
+    /* watchdog: if the main script never takes over, drop the overlay */
+    setTimeout(function () {
+      var d = document.documentElement;
+      if (d.classList.contains("intro-on") && !d.classList.contains("intro-run")) {
+        d.classList.remove("intro-on");
+      }
+    }, 9000);
+  } catch (e) {}
+})();
+</script>
+<style nonce="__AEGIS_NONCE__">
+/* ---- tokens ------------------------------------------------------------ */
+:root {
+  --bg: #060608; --bg2: #0b0b0e; --panel: #0d0d10; --panel2: #141419; --well: #08080b;
+  --line: rgba(255,255,255,.08); --line-strong: rgba(255,255,255,.16);
+  --text: #f2f2f4; --muted: #9a9aa3; --faint: #67676f;
+  --accent: #ff6b2c; --accent-soft: rgba(255,107,44,.16); --amber: #ffb056;
+  --violet: #8b5cf6; --ok: #3ddc97; --warn: #ffc457; --danger: #ff7a7a;
+  --r-lg: 20px; --r-md: 13px; --r-pill: 999px;
+  --font: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --ease: cubic-bezier(.22,1,.36,1);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f7f5f1; --bg2: #fffefb; --panel: #ffffff; --panel2: #f2efe8; --well: #f2efe8;
+  --line: rgba(28,24,16,.10); --line-strong: rgba(28,24,16,.20);
+  --text: #17150f; --muted: #6d6a60; --faint: #96938a;
+  --accent: #e5541c; --accent-soft: rgba(229,84,28,.13); --amber: #b26f1e;
+  --violet: #6d4bd8; --ok: #0f9d63; --warn: #9a7418; --danger: #c24848;
+  color-scheme: light;
+}
+
+/* ---- base --------------------------------------------------------------- */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 var(--font);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+html.intro-on, html.intro-on body { overflow: hidden; }
+::selection { background: var(--accent-soft); color: var(--text); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 999px; }
+::-webkit-scrollbar-track { background: transparent; }
+a { color: var(--accent); }
+
+#scene-glow { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(58% 42% at 72% -4%, rgba(255,107,44,.055), transparent 62%),
+    radial-gradient(46% 38% at 12% 104%, rgba(139,92,246,.05), transparent 60%);
+}
+:root[data-theme="light"] #scene-glow {
+  background:
+    radial-gradient(58% 42% at 72% -4%, rgba(229,84,28,.07), transparent 62%),
+    radial-gradient(46% 38% at 12% 104%, rgba(109,75,216,.06), transparent 60%);
+}
+#scene { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+header, main, #marquee, footer { position: relative; z-index: 2; }
+
+/* ---- typography helpers ------------------------------------------------- */
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.error { color: var(--danger); font-size: 13.5px; }
+.mono { font-family: var(--mono); }
+h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+  background: var(--faint); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 9px rgba(61,220,151,.55);
+  animation: pulse 2.6s ease-in-out infinite; }
+.dot.warn { background: var(--warn); }
+
+/* ---- chips & buttons ---------------------------------------------------- */
+.chip {
+  font: 500 11px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase;
+  padding: 8px 12px; border-radius: var(--r-pill); border: 1px solid var(--line);
+  color: var(--muted); background: transparent;
+  display: inline-flex; align-items: center; gap: 8px;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.chip b { color: var(--accent); font-weight: 600; }
+button.chip { cursor: pointer; }
+button.chip:hover { border-color: var(--line-strong); color: var(--text); }
+.btn {
+  font: 600 13.5px/1 var(--font); border-radius: var(--r-pill);
+  padding: 11px 18px; border: 1px solid var(--line);
+  background: var(--panel2); color: var(--text); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+  transition: border-color .15s ease, background .15s ease, transform .05s ease, box-shadow .2s ease, filter .15s ease;
+}
+.btn:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn.primary { background: var(--accent); border-color: transparent; color: #180a02;
+  box-shadow: 0 6px 26px var(--accent-soft); }
+.btn.primary:hover { filter: brightness(1.06); box-shadow: 0 9px 34px var(--accent-soft); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn.small { padding: 7px 13px; font-size: 12.5px; font-weight: 550; }
+.btn svg { flex: none; }
+
+/* ---- inputs ------------------------------------------------------------- */
+input, select, textarea {
+  width: 100%; background: var(--well); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 12px 14px; font: 14.5px var(--font);
+}
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
+textarea { resize: vertical; font-family: var(--mono); font-size: 13.5px; }
+input[type="range"], input[type="checkbox"] { accent-color: var(--accent); }
+select { width: auto; padding-right: 34px; }
+label { display: block; margin: 14px 0 5px; font-size: 12.5px;
+  color: var(--muted); letter-spacing: .02em; }
+
+/* ---- top nav ------------------------------------------------------------ */
+#topnav {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+  width: min(1240px, calc(100vw - 24px));
+  z-index: 40; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 9px 12px 9px 18px; border-radius: 16px;
+  background: color-mix(in srgb, var(--bg2) 84%, transparent);
+  border: 1px solid var(--line); backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 10px 40px rgba(0,0,0,.35);
+}
+:root[data-theme="light"] #topnav { box-shadow: 0 10px 34px rgba(60,50,30,.10); }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand .mark { color: var(--accent); display: flex; }
+.brand .wordmark { font-weight: 700; letter-spacing: .14em; font-size: 14.5px; }
+.brand .ver {
+  font: 600 10px/1 var(--mono); letter-spacing: .08em; color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  border-radius: var(--r-pill); padding: 4px 7px;
+}
+.nav-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.status .dot { background: var(--faint); }
+.status.unlocked { color: var(--text); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.status.unlocked .dot { background: var(--ok); box-shadow: 0 0 9px rgba(61,220,151,.55); }
+
+/* ---- hero / unlock ------------------------------------------------------ */
+main { max-width: 1180px; margin: 0 auto; padding: 96px 22px 10px; flex: 1; }
+body { min-height: 100vh; display: flex; flex-direction: column; }
+#unlock-view { min-height: calc(100vh - 260px); display: flex; align-items: center; justify-content: center; }
+.hero { text-align: center; max-width: 780px; padding-bottom: 24px; }
+.hero-kicker { margin: 0 0 18px; font: 500 11.5px/1 var(--mono); letter-spacing: .3em;
+  text-transform: uppercase; color: var(--muted);
+  animation: fadeUp .7s var(--ease) both; }
+.hero-word {
+  margin: 0; font-size: clamp(58px, 12.5vw, 150px); font-weight: 700;
+  letter-spacing: -.025em; line-height: .95; color: var(--text);
+  animation: fadeUp .8s var(--ease) .08s both;
+}
+.hero-sub { margin: 20px auto 0; color: var(--muted); font-size: 15px;
+  max-width: 46ch; animation: fadeUp .8s var(--ease) .16s both; }
+.unlock-row { display: flex; gap: 10px; margin: 34px auto 0;
+  width: min(440px, 100%); animation: fadeUp .8s var(--ease) .24s both; }
+.unlock-row input { text-align: center; flex: 1 1 auto; width: auto; min-width: 0; }
+.unlock-row .btn { white-space: nowrap; }
+.unlock-msg { min-height: 20px; margin-top: 12px; }
+#unlock-error:not([hidden]) { animation: fadeUp .3s var(--ease) both; }
+.unlock-chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  margin-top: 30px; animation: fadeUp .8s var(--ease) .3s both; }
+
+/* ---- stats cells -------------------------------------------------------- */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+.cell {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 20px 22px; display: flex; flex-direction: column; gap: 6px;
+  transition: border-color .2s ease, transform .2s var(--ease);
+}
+.cell:hover { border-color: var(--line-strong); }
+.cell-k { font: 500 10.5px/1 var(--mono); letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); }
+.cell-v { font-size: clamp(30px, 3.4vw, 44px); font-weight: 650;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.cell-v.sm { font-size: 21px; font-weight: 600; }
+.cell-s { font-size: 12.5px; color: var(--muted); }
+.cell-live { display: flex; align-items: center; gap: 9px; }
+#stat-idle.warn { color: var(--warn); }
+#stat-idle.danger { color: var(--danger); }
+
+/* ---- command bar -------------------------------------------------------- */
+.commandbar {
+  display: flex; gap: 9px; align-items: center; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--line); border-radius: 16px; padding: 9px;
+  margin-bottom: 14px;
+}
+.commandbar input[type="search"] { flex: 1 1 220px; width: auto; }
+.spacer { flex: 1; }
+.list-head { display: flex; align-items: baseline; gap: 12px;
+  padding: 2px 4px 10px; color: var(--muted); font-size: 12.5px; }
+.list-head .spacer { flex: 1; }
+
+/* ---- console ------------------------------------------------------------ */
+.console {
+  border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden;
+  background: #0a0a0d; margin-bottom: 14px;
+  animation: fadeUp .4s var(--ease) both;
+}
+.console-head { display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.console-head .chip { border-color: rgba(255,255,255,.10); color: #9a9aa3; }
+.console-head .chip:hover { color: #f2f2f4; }
+.console-title { font: 600 10.5px/1 var(--mono); letter-spacing: .16em;
+  text-transform: uppercase; color: #8f8f98; }
+.console-count { font: 500 11px/1 var(--mono); color: #67676f; }
+.console-body { height: 214px; overflow-y: auto; padding: 10px 14px;
+  font: 12.5px/1.75 var(--mono); color: #c9c9cf; }
+.cline { display: flex; gap: 10px; white-space: nowrap; }
+.cline .ct { color: #5b5b63; } .cline .cl { width: 34px; flex: none; }
+.cline .cm { white-space: pre-wrap; word-break: break-word; color: #c9c9cf; }
+.cline.ok .cl { color: #3ddc97; } .cline.err .cl { color: #ff7a7a; }
+.cline.act .cl { color: #ffb056; } .cline.info .cl { color: #7f8ea3; }
+.cline.err .cm { color: #f0b9b9; }
+
+/* ---- item cards --------------------------------------------------------- */
+#items-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 12px; }
+.item {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 18px 20px; display: flex; flex-direction: column;
+  transition: border-color .2s ease, transform .2s var(--ease), box-shadow .2s ease;
+}
+.item.anim { animation: fadeUp .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 36ms); }
+.item:hover { border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  transform: translateY(-2px); box-shadow: 0 14px 40px rgba(0,0,0,.28); }
+:root[data-theme="light"] .item:hover { box-shadow: 0 14px 34px rgba(70,56,30,.10); }
+.item-head { display: flex; align-items: center; gap: 10px; }
+.item-head .row { margin-left: auto; display: flex; gap: 6px; }
+.monogram, .mono {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 650; font-size: 14.5px;
+  background: hsl(var(--mc-h, 210) 55% 20% / .6);
+  color: hsl(var(--mc-h, 210) 85% 74%);
+}
+:root[data-theme="light"] .monogram, :root[data-theme="light"] .mono {
+  background: hsl(var(--mc-h, 210) 65% 92%);
+  color: hsl(var(--mc-h, 210) 50% 34%);
+}
+.item-name { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.badge { font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .09em;
+  color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 5px 9px; flex: none; }
+.badge.note { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 38%, var(--line)); }
+.item .meta { margin-top: 8px; display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; overflow-wrap: anywhere; }
+.item .meta .ghost { padding: 2px 9px; font-size: 11.5px; }
+.pw-row { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
+.pw-row .field-code, .editor .field-code {
+  flex: 1; min-width: 0; background: var(--well); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 8px 12px; font: 13.5px var(--mono);
+  overflow-x: auto; white-space: nowrap; letter-spacing: .04em;
+}
+.notes { margin: 11px 0 0; padding: 10px 12px; background: var(--well);
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--text); }
+.atts { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.att { display: inline-flex; align-items: center; gap: 8px; background: var(--well);
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 4px 6px 4px 12px; font-size: 12.5px; max-width: 100%; }
+.att .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.att .att-size { color: var(--muted); font: 11px var(--mono); }
+.att button { padding: 3px 8px; font-size: 11.5px; border-radius: var(--r-pill); }
+
+/* ---- meter & generator -------------------------------------------------- */
+.meter { margin-top: 10px; }
+.meter-bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.meter-fill { height: 100%; width: 0; border-radius: 999px;
+  transition: width .18s ease, background .18s ease; }
+.meter-label { font: 11.5px var(--mono); color: var(--muted); margin-top: 5px; }
+#gen-panel { margin-top: 12px; padding: 12px 14px; background: var(--well);
+  border: 1px solid var(--line); border-radius: var(--r-md); }
+#gen-panel .row { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+#gen-panel input[type="range"] { flex: 1; padding: 0; border: none; background: transparent;
+  box-shadow: none; }
+#gen-len-out { font: 12.5px var(--mono); color: var(--muted); min-width: 2.4em;
+  text-align: right; }
+.checkline { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+.checkline label { display: flex; align-items: center; gap: 7px; margin: 0;
+  color: var(--text); font-size: 13px; }
+.checkline input { width: auto; }
+
+/* ---- audit -------------------------------------------------------------- */
+#audit-panel { background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 18px 20px; margin-bottom: 14px; animation: fadeUp .4s var(--ease) both; }
+#audit-panel h3 { font-size: 14px; margin-bottom: 4px; }
+#audit-panel .audit-group { margin: 12px 0 0; }
+.audit-list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+.audit-chip { background: var(--well); border: 1px solid var(--line);
+  border-radius: var(--r-pill); padding: 4px 13px; font-size: 12.5px;
+  color: var(--text); cursor: pointer; transition: border-color .15s ease; }
+.audit-chip:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+
+#empty-msg { margin: 54px auto 20px; max-width: 420px; }
+#empty-msg svg { opacity: .5; color: var(--accent); }
+#empty-msg { color: var(--muted); }
+
+/* ---- editor ------------------------------------------------------------- */
+.editor-card { max-width: 640px; margin: 0 auto; background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line); border-radius: var(--r-lg); padding: 26px 28px;
+  animation: fadeUp .45s var(--ease) both; }
+.editor-card h2 { font-size: 18px; margin-bottom: 16px; }
+.row.right { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.editor .row { display: flex; gap: 8px; align-items: center; }
+
+/* ---- marquee ------------------------------------------------------------ */
+#marquee { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  padding: 15px 0; overflow: hidden; margin-top: 42px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.m-track { display: flex; width: max-content; animation: marquee 76s linear infinite; }
+#marquee:hover .m-track { animation-play-state: paused; }
+.m-group { display: flex; align-items: center; }
+.m-group span { font: 500 11.5px/1 var(--mono); letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.m-group b { font-weight: 500; color: var(--amber); }
+.m-group i { font-style: normal; color: var(--faint); margin: 0 26px; }
+
+/* ---- footer ------------------------------------------------------------- */
+footer { padding: 16px 22px 26px; }
+.foot-inner { max-width: 1240px; margin: 0 auto; display: flex; gap: 14px;
+  flex-wrap: wrap; align-items: center; justify-content: space-between;
+  color: var(--faint); font: 12px var(--mono); }
+.foot-inner .mid { color: var(--muted); }
+.foot-inner .right { display: flex; align-items: center; gap: 8px; }
+
+/* ---- toast -------------------------------------------------------------- */
+#toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  z-index: 80; max-width: min(92vw, 560px); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  background: color-mix(in srgb, var(--panel2) 94%, transparent);
+  border: 1px solid var(--line-strong); color: var(--text);
+  border-radius: var(--r-pill); padding: 10px 20px; font-size: 13.5px;
+  box-shadow: 0 14px 44px rgba(0,0,0,.4);
+  animation: fadeUp .3s var(--ease) both; }
+#toast.err { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
+
+/* ---- intro ceremony ----------------------------------------------------- */
+#intro { position: fixed; inset: 0; z-index: 60; display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  background: var(--bg); cursor: pointer; }
+html.intro-on #intro { display: flex; }
+#intro.done { opacity: 0; transition: opacity .55s ease; }
+#intro-canvas { position: absolute; inset: 0; }
+.intro-stage { position: relative; text-align: center; }
+.intro-word { display: flex; justify-content: center; overflow: hidden;
+  font-size: clamp(54px, 11vw, 132px); font-weight: 700; letter-spacing: -.02em;
+  line-height: 1.05; }
+.intro-word span { display: inline-block; transform: translateY(115%); }
+#intro.run .intro-word span { animation: letterUp .85s cubic-bezier(.76,0,.24,1) both; }
+#intro.run .intro-word span:nth-child(1) { animation-delay: .20s; }
+#intro.run .intro-word span:nth-child(2) { animation-delay: .24s; }
+#intro.run .intro-word span:nth-child(3) { animation-delay: .28s; }
+#intro.run .intro-word span:nth-child(4) { animation-delay: .32s; }
+#intro.run .intro-word span:nth-child(5) { animation-delay: .36s; }
+.intro-rule { width: min(420px, 62vw); height: 1px; background: var(--line-strong);
+  margin: 22px auto 0; transform: scaleX(0); transform-origin: left; }
+#intro.run .intro-rule { animation: ruleDraw .7s var(--ease) 1.15s both; }
+.intro-bar { display: flex; gap: 6px; justify-content: center; margin-top: 22px; }
+.intro-bar i { width: 46px; height: 4px; border-radius: 2px; background: var(--accent);
+  transform: scaleX(0); transform-origin: left; opacity: .92; }
+#intro.run .intro-bar i:nth-child(1) { animation: segFill .3s var(--ease) 1.6s both; }
+#intro.run .intro-bar i:nth-child(2) { animation: segFill .3s var(--ease) 1.78s both; }
+#intro.run .intro-bar i:nth-child(3) { animation: segFill .3s var(--ease) 1.96s both; }
+#intro.run .intro-bar i:nth-child(4) { animation: segFill .3s var(--ease) 2.14s both; }
+#intro.run .intro-bar i:nth-child(5) { animation: segFill .3s var(--ease) 2.32s both; }
+.intro-cap { margin: 26px 0 0; font: 500 11.5px/1 var(--mono);
+  letter-spacing: .34em; text-transform: uppercase; color: var(--muted); opacity: 0; }
+#intro.run .intro-cap { animation: capIn .6s var(--ease) 2.5s both; }
+.intro-skip { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+  font: 11px var(--mono); letter-spacing: .18em; text-transform: uppercase;
+  color: var(--faint); opacity: 0; }
+#intro.run .intro-skip { animation: capIn .6s var(--ease) 1.2s both; }
+
+/* ---- motion ------------------------------------------------------------- */
+.reveal { opacity: 0; transform: translateY(18px);
+  transition: opacity .7s var(--ease), transform .7s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 50% { opacity: .45; } }
+@keyframes marquee { to { transform: translateX(-50%); } }
+@keyframes letterUp { from { transform: translateY(115%); } to { transform: none; } }
+@keyframes ruleDraw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes segFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes capIn { from { opacity: 0; } to { opacity: 1; } }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+
+/* ---- responsive & reduced ----------------------------------------------- */
+@media (max-width: 900px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  main { padding-top: 88px; }
+}
+@media (max-width: 560px) {
+  .stats { grid-template-columns: 1fr; }
+  #items-list { grid-template-columns: 1fr; }
+  .unlock-row { flex-direction: column; }
+  .nav-right .chip.brandless { display: none; }
+  .foot-inner { justify-content: center; text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+  .m-track { animation: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="scene-glow" aria-hidden="true"></div>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<section id="intro" aria-hidden="true">
+  <canvas id="intro-canvas"></canvas>
+  <div class="intro-stage">
+    <div class="intro-word" aria-label="AEGIS">
+      <span>A</span><span>E</span><span>G</span><span>I</span><span>S</span>
+    </div>
+    <div class="intro-rule"></div>
+    <div class="intro-bar"><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="intro-cap">Local encrypted vault</p>
+  </div>
+  <p class="intro-skip">click or esc to skip</p>
+</section>
+
+<header id="topnav">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2.5 4.5 5.5v5.6c0 4.7 3 8.9 7.5 10.4 4.5-1.5 7.5-5.7 7.5-10.4V5.5L12 2.5z"/></svg>
+    </span>
+    <span class="wordmark">AEGIS</span>
+    <span class="ver">V1</span>
+  </div>
+  <div class="nav-right">
+    <span id="status-pill" class="chip status locked"><i class="dot"></i><span id="status-text">locked</span></span>
+    <button id="log-toggle" class="chip" title="Session log">log</button>
+    <button id="theme-btn" class="chip" title="Toggle theme">theme</button>
+    <button id="lock-btn" class="btn small" hidden>Lock</button>
+  </div>
+</header>
+
+<main>
+  <section id="unlock-view">
+    <div class="hero">
+      <p class="hero-kicker">Local-only encrypted vault</p>
+      <h1 class="hero-word">AEGIS</h1>
+      <p class="hero-sub">One master password. Nothing leaves this machine.</p>
+      <form id="unlock-form" class="unlock-row" novalidate>
+        <input id="unlock-password" type="password" placeholder="Master password" autocomplete="off" autofocus aria-label="Master password">
+        <button id="unlock-btn" class="btn primary">Unlock &rarr;</button>
+      </form>
+      <div class="unlock-msg">
+        <p id="unlock-error" class="error" hidden></p>
+        <p id="unlock-hint" class="muted small">Your master password never leaves this machine.</p>
+      </div>
+      <div class="unlock-chips">
+        <span class="chip"><b>01</b> AGSV1</span>
+        <span class="chip"><b>02</b> Argon2id</span>
+        <span class="chip"><b>03</b> XChaCha20-Poly1305</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="vault-view" hidden>
+    <div class="stats reveal">
+      <div class="cell">
+        <span class="cell-k">01 &middot; entries</span>
+        <span class="cell-v" id="stat-entries">0</span>
+        <span class="cell-s">sealed records in this vault</span>
+      </div>
+      <div class="cell">
+        <span class="cell-k">02 &middot; revision</span>
+        <span class="cell-v" id="stat-rev">&ndash;</span>
+        <span class="cell-s">monotonic write counter</span>
+      </div>
+      <div class="cell">
+        <span class="cell-k">03 &middot; auto-lock</span>
+        <span class="cell-v sm" id="stat-idle">5:00</span>
+        <span class="cell-s">idle timer &middot; any input resets</span>
+      </div>
+      <div class="cell">
+        <span class="cell-k">04 &middot; seal</span>
+        <span class="cell-v sm cell-live"><i class="dot ok"></i><span id="stat-seal">active</span></span>
+        <span class="cell-s">one suite &middot; no negotiation</span>
+      </div>
+    </div>
+
+    <div class="commandbar">
+      <input id="search" type="search" placeholder="Search entries&hellip;  ( / )" autocomplete="off">
+      <select id="sort" title="Sort">
+        <option value="name">name</option>
+        <option value="modified">recent</option>
+        <option value="kind">type</option>
+      </select>
+      <span class="spacer"></span>
+      <button id="audit-btn" class="btn ghost small">Audit</button>
+      <button id="upload-btn" class="btn ghost small" title="Encrypt a file into the vault">Upload</button>
+      <button id="add-btn" class="btn primary small">+ New</button>
+    </div>
+
+    <div id="console-panel" class="console" hidden>
+      <div class="console-head">
+        <span class="console-title">Session log</span>
+        <span class="spacer"></span>
+        <span id="console-count" class="console-count">0 lines</span>
+        <button id="console-clear" class="chip">clear</button>
+        <button id="console-close" class="chip">&times;</button>
+      </div>
+      <div id="console-body" class="console-body" role="log" aria-live="polite"></div>
+    </div>
+
+    <div id="audit-panel" hidden></div>
+
+    <div class="list-head">
+      <span id="meta"></span>
+      <span class="spacer"></span>
+      <span>/ to search &middot; ctrl+shift+L to lock</span>
+    </div>
+
+    <div id="items-list"></div>
+
+    <p id="empty-msg" class="muted small" hidden>
+      <svg width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1">
+        <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z"/>
+        <path d="m8.6 12.2 2.2 2.2 4.6-4.6"/>
+      </svg>
+      <br>Nothing here yet. Add a login, a note, or upload a file.
+    </p>
+  </section>
+
+  <section id="editor" hidden>
+    <div class="editor editor-card">
+      <h2 id="editor-title">New item</h2>
+
+      <label for="f-kind">Type</label>
+      <select id="f-kind">
+        <option value="login">Login</option>
+        <option value="note">Secure note</option>
+      </select>
+
+      <label for="f-name">Name</label>
+      <input id="f-name" autocomplete="off">
+
+      <div class="login-field">
+        <label for="f-username">Username</label>
+        <input id="f-username" autocomplete="off">
+      </div>
+
+      <div class="login-field">
+        <label for="f-password">Password</label>
+        <div class="row">
+          <input id="f-password" autocomplete="off">
+          <button id="gen-btn" type="button" class="btn ghost small">Generate</button>
+          <button id="gen-opts-btn" type="button" class="btn ghost small" title="Generator options">&#9881;</button>
+          <button id="copy-pw-btn" type="button" class="btn ghost small">Copy</button>
+        </div>
+        <div class="meter">
+          <div class="meter-bar"><div id="meter-fill" class="meter-fill"></div></div>
+          <div id="meter-label" class="meter-label">strength: &ndash;</div>
+        </div>
+        <div id="gen-panel" hidden>
+          <div class="row">
+            <span class="small muted">length</span>
+            <input id="gen-length" type="range" min="12" max="64" value="20">
+            <span id="gen-len-out" class="small">20</span>
+          </div>
+          <div class="checkline">
+            <label><input id="gen-upper" type="checkbox" checked> A&ndash;Z</label>
+            <label><input id="gen-digits" type="checkbox" checked> 0&ndash;9</label>
+            <label><input id="gen-symbols" type="checkbox" checked> symbols</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="login-field">
+        <label for="f-url">URL</label>
+        <input id="f-url" autocomplete="off">
+      </div>
+
+      <label for="f-notes">Notes</label>
+      <textarea id="f-notes" rows="4"></textarea>
+
+      <div class="row right">
+        <button id="cancel-btn" class="btn ghost">Cancel</button>
+        <button id="save-btn" class="btn primary">Save</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="marquee" aria-hidden="true">
+  <div class="m-track">
+    <div class="m-group">
+      <span><b>AGSV1</b> format</span><i>&middot;</i>
+      <span>Argon2id key derivation</span><i>&middot;</i>
+      <span>HKDF-SHA256</span><i>&middot;</i>
+      <span><b>XChaCha20-Poly1305</b></span><i>&middot;</i>
+      <span>atomic writes</span><i>&middot;</i>
+      <span>keyfile second factor</span><i>&middot;</i>
+      <span>loopback only</span><i>&middot;</i>
+      <span>no telemetry</span><i>&middot;</i>
+      <span>chunked attachment streams</span><i>&middot;</i>
+      <span><b>single suite &middot; no negotiation</b></span><i>&middot;</i>
+      <span>master password never stored</span><i>&middot;</i>
+      <span>libsodium core</span><i>&middot;</i>
+    </div>
+    <div class="m-group">
+      <span><b>AGSV1</b> format</span><i>&middot;</i>
+      <span>Argon2id key derivation</span><i>&middot;</i>
+      <span>HKDF-SHA256</span><i>&middot;</i>
+      <span><b>XChaCha20-Poly1305</b></span><i>&middot;</i>
+      <span>atomic writes</span><i>&middot;</i>
+      <span>keyfile second factor</span><i>&middot;</i>
+      <span>loopback only</span><i>&middot;</i>
+      <span>no telemetry</span><i>&middot;</i>
+      <span>chunked attachment streams</span><i>&middot;</i>
+      <span><b>single suite &middot; no negotiation</b></span><i>&middot;</i>
+      <span>master password never stored</span><i>&middot;</i>
+      <span>libsodium core</span><i>&middot;</i>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="foot-inner">
+    <span id="foot-left">vault: &hellip;</span>
+    <span class="mid">AGSV1 &middot; Argon2id &middot; XChaCha20-Poly1305</span>
+    <span class="right"><i class="dot ok"></i> 127.0.0.1 &middot; local only &middot; v0.4.0</span>
+  </div>
+</footer>
+
+<div id="toast" hidden></div>
+
+<script nonce="__AEGIS_NONCE__">
+"use strict";
+const TOKEN = "__AEGIS_TOKEN__";
+const VERSION = "0.4.0";
+const IDLE_MS = 5 * 60 * 1000;
+const RM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const $ = (id) => document.getElementById(id);
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+async function api(method, path, body) {
+  const opts = { method: method, headers: { "X-Aegis-Token": TOKEN } };
+  if (body !== undefined) {
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, opts);
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* empty body */ }
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+window.addEventListener("error", (e) => {
+  try { document.documentElement.setAttribute("data-last-error", String(e.message || e)); } catch (_) {}
+});
+window.addEventListener("unhandledrejection", (e) => {
+  try {
+    document.documentElement.setAttribute("data-last-error",
+      String((e.reason && e.reason.message) || e.reason || "rejection"));
+  } catch (_) {}
+});
+
+// ---- prefs (localStorage: theme + generator options only, never secrets) --
+
+const prefs = {
+  theme() { try { return localStorage.getItem("aegis-theme") || "dark"; } catch (e) { return "dark"; } },
+  setTheme(v) { try { localStorage.setItem("aegis-theme", v); } catch (e) {} },
+  gen() {
+    try { return Object.assign({ length: 20, uppercase: true, digits: true, symbols: true },
+                               JSON.parse(localStorage.getItem("aegis-gen")) || {}); }
+    catch (e) { return { length: 20, uppercase: true, digits: true, symbols: true }; }
+  },
+  setGen(v) { try { localStorage.setItem("aegis-gen", JSON.stringify(v)); } catch (e) {} },
+};
+
+let unlocked = false;
+let items = [];
+let editingId = null;
+let idleAt = Date.now();
+
+// ---- chrome ---------------------------------------------------------------
+
+function setStatus(locked) {
+  const pill = $("status-pill");
+  $("status-text").textContent = locked ? "locked" : "unlocked";
+  pill.classList.toggle("locked", locked);
+  pill.classList.toggle("unlocked", !locked);
+  $("lock-btn").hidden = locked;
+  if (locked) $("meta").textContent = "";
+  scene.setMode(locked ? "hero" : "vault");
+}
+
+let toastTimer = null;
+function toast(message, kind) {
+  const node = $("toast");
+  node.textContent = message;
+  node.hidden = false;
+  node.classList.toggle("err", kind === "err");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { node.hidden = true; }, kind === "err" ? 4200 : 2400);
+}
+
+async function copyText(text, message) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(message);
+    logEvent("act", message);
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); toast(message); logEvent("act", message); }
+    catch (e2) { toast("copy failed", "err"); }
+    ta.remove();
+  }
+}
+
+function humanSize(n) {
+  if (n < 1024) return n + " B";
+  let size = n;
+  for (const unit of ["KiB", "MiB", "GiB"]) {
+    size /= 1024;
+    if (size < 1024) return size.toFixed(1) + " " + unit;
+  }
+  return (size / 1024).toFixed(1) + " TiB";
+}
+
+function relTime(ts) {
+  if (!ts) return "";
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  if (s < 86400 * 30) return Math.floor(s / 86400) + "d ago";
+  return new Date(ts * 1000).toLocaleDateString();
+}
+
+function entropyBits(pw) {
+  if (!pw) return 0;
+  let pool = 0;
+  if (/[a-z]/.test(pw)) pool += 26;
+  if (/[A-Z]/.test(pw)) pool += 24;
+  if (/[0-9]/.test(pw)) pool += 10;
+  if (/[^a-zA-Z0-9]/.test(pw)) pool += 16;
+  return Math.round(pw.length * Math.log2(pool || 1));
+}
+
+function strength(pw) {
+  const bits = entropyBits(pw);
+  if (bits < 40) return { bits: bits, label: "weak", color: "var(--danger)" };
+  if (bits < 60) return { bits: bits, label: "fair", color: "var(--warn)" };
+  if (bits < 80) return { bits: bits, label: "strong", color: "var(--ok)" };
+  return { bits: bits, label: "elite", color: "var(--accent)" };
+}
+
+function updateMeter() {
+  const s = strength($("f-password").value);
+  const fill = $("meter-fill");
+  fill.style.width = Math.min(100, s.bits) + "%";
+  fill.style.background = s.color;
+  $("meter-label").textContent = "strength: " + s.label + " (~" + s.bits + " bits)";
+}
+
+// ---- session log -----------------------------------------------------------
+
+const LOG_MAX = 200;
+let logReady = false;
+
+function logEvent(level, text) {
+  try {
+    const body = $("console-body");
+    if (!body) return;
+    if (!logReady) { logReady = true; }
+    const line = el("div", "cline " + level);
+    line.appendChild(el("span", "ct", new Date().toTimeString().slice(0, 8)));
+    line.appendChild(el("span", "cl", level));
+    line.appendChild(el("span", "cm", text));
+    body.appendChild(line);
+    while (body.childElementCount > LOG_MAX) body.removeChild(body.firstChild);
+    body.scrollTop = body.scrollHeight;
+    $("console-count").textContent = body.childElementCount + " lines";
+  } catch (e) { /* log must never break the app */ }
+}
+
+// ---- canvas scene: dot grid, cursor trail, arcs, armillary ---------------
+
+const scene = (function () {
+  const cv = $("scene");
+  const ctx = cv.getContext("2d");
+  const CELL = 26, TRAIL_R = 150, BUCKETS = 12;
+  const bucketPool = [];
+  for (let b = 0; b < BUCKETS; b++) bucketPool.push([]);
+
+  let W = 0, H = 0, DPR = 1, raf = 0, running = false, last = 0, t = 0;
+  let mode = "hero";
+  let gw = 0, gh = 0, boost = new Float32Array(0);
+  const pointer = { x: -9999, y: -9999 };
+
+  function resize() {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.max(1, Math.round(W * DPR));
+    cv.height = Math.max(1, Math.round(H * DPR));
+    cv.style.width = W + "px";
+    cv.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    gw = Math.ceil(W / CELL) + 1;
+    gh = Math.ceil(H / CELL) + 1;
+    boost = new Float32Array(gw * gh);
+    if (RM) drawFrame(0);
+  }
+
+  function stamp(x, y) {
+    const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
+    const r = Math.ceil(TRAIL_R / CELL) + 1;
+    for (let j = gy - r; j <= gy + r; j++) {
+      if (j < 0 || j >= gh) continue;
+      for (let i = gx - r; i <= gx + r; i++) {
+        if (i < 0 || i >= gw) continue;
+        const dx = (i + 0.5) * CELL - x, dy = (j + 0.5) * CELL - y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > TRAIL_R) continue;
+        const f = 1 - d / TRAIL_R;
+        const b = f * f;
+        const k = j * gw + i;
+        if (b > boost[k]) boost[k] = b;
+      }
+    }
+  }
+
+  function hash(i, j) {
+    let h = (i * 73856093) ^ (j * 19349663);
+    h = (h ^ (h >> 13)) >>> 0;
+    return (h % 1000) / 1000;
+  }
+
+  function drawFrame(dt) {
+    const light = document.documentElement.dataset.theme === "light";
+    const dotRGB = light ? "26,22,16" : "235,235,242";
+    const accRGB = light ? "229,84,28" : "255,107,44";
+    const wRGB = light ? "26,22,16" : "244,242,238";
+    ctx.clearRect(0, 0, W, H);
+
+    if (dt > 0) {
+      const k = Math.pow(0.90, dt / 16.7);
+      for (let i = 0; i < boost.length; i++) boost[i] *= k;
+    }
+
+    if (mode === "hero") {
+      for (let s = 0; s < 5; s++) {
+        const rx = Math.max(W, H) * (0.52 + s * 0.14);
+        const ry = rx * 0.44;
+        const rot = s * 0.7 + t * 0.02 * (s % 2 ? 1 : -1);
+        const a0 = s * 1.3 + t * 0.05;
+        ctx.beginPath();
+        ctx.ellipse(W * 0.62, H * 0.58, rx, ry, rot, a0, a0 + 1.15);
+        ctx.strokeStyle = "rgba(" + wRGB + "," + (0.05 + 0.02 * Math.sin(t * 0.4 + s)).toFixed(3) + ")";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      const acx = W * 0.68, acy = H * 0.5, base = Math.min(W, H) * 0.34;
+      for (let r = 0; r < 7; r++) {
+        const rr = base * (0.62 + r * 0.11);
+        const rot = r * 0.45 + t * 0.06;
+        const ry = rr * (0.24 + 0.05 * r);
+        ctx.beginPath();
+        ctx.ellipse(acx, acy, rr, ry, rot, 0, Math.PI * 2);
+        const a = 0.05 + 0.02 * Math.sin(t * 0.5 + r * 1.7);
+        ctx.strokeStyle = r === 0
+          ? "rgba(" + accRGB + "," + (a + 0.05).toFixed(3) + ")"
+          : "rgba(" + wRGB + "," + a.toFixed(3) + ")";
+        ctx.lineWidth = r === 0 ? 1.2 : 0.8;
+        ctx.stroke();
+      }
+      if (pointer.x > -9000) {
+        const g = ctx.createRadialGradient(pointer.x, pointer.y, 0, pointer.x, pointer.y, 140);
+        g.addColorStop(0, "rgba(" + accRGB + ",0.07)");
+        g.addColorStop(1, "rgba(" + accRGB + ",0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(pointer.x - 140, pointer.y - 140, 280, 280);
+      }
+    }
+
+    for (let b = 0; b < BUCKETS; b++) bucketPool[b].length = 0;
+    for (let j = 0; j < gh; j++) {
+      for (let i = 0; i < gw; i++) {
+        const k = j * gw + i;
+        const h = hash(i, j);
+        const wob = Math.sin(t * 0.55 + h * 6.283 + (i + j) * 0.02) * 0.5 + 0.5;
+        const wave = Math.sin(t * 0.3 + i * 0.09 + j * 0.05) * 0.5 + 0.5;
+        let a = 0.05 + wob * 0.045 + wave * 0.06 + boost[k] * 0.65;
+        if (a < 0.02) continue;
+        if (a > 0.85) a = 0.85;
+        const bi = Math.min(BUCKETS - 1, (a / 0.85 * BUCKETS) | 0);
+        bucketPool[bi].push((i + 0.5) * CELL, (j + 0.5) * CELL, boost[k]);
+      }
+    }
+    for (let b = 0; b < BUCKETS; b++) {
+      const arr = bucketPool[b];
+      if (!arr.length) continue;
+      const baseA = Math.min(0.8, ((b + 0.5) / BUCKETS) * 0.85);
+      ctx.fillStyle = "rgba(" + dotRGB + "," + baseA.toFixed(3) + ")";
+      for (let n = 0; n < arr.length; n += 3) {
+        const tb = arr[n + 2];
+        const sz = tb > 0.25 ? 2.6 : 1.8;
+        ctx.fillRect(arr[n] - sz / 2, arr[n + 1] - sz / 2, sz, sz);
+      }
+    }
+  }
+
+  function loop(now) {
+    if (!running) return;
+    const dt = Math.min(64, now - last || 16.7);
+    last = now;
+    t += dt / 1000;
+    drawFrame(dt);
+    raf = requestAnimationFrame(loop);
+  }
+
+  function start() {
+    if (RM) { drawFrame(0); return; }
+    if (running) return;
+    running = true;
+    last = performance.now();
+    raf = requestAnimationFrame(loop);
+  }
+  function stop() { running = false; cancelAnimationFrame(raf); }
+
+  window.addEventListener("resize", resize);
+  window.addEventListener("pointermove", (ev) => {
+    pointer.x = ev.clientX; pointer.y = ev.clientY;
+    if (!RM) stamp(ev.clientX, ev.clientY);
+  }, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stop(); else start();
+  });
+
+  resize();
+  start();
+
+  return {
+    setMode(m) { mode = m; if (RM) drawFrame(0); },
+    refresh() { if (RM) drawFrame(0); },
+  };
+})();
+
+// ---- reveal on scroll + count-up ------------------------------------------
+
+const io = ("IntersectionObserver" in window)
+  ? new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+      }
+    }, { threshold: 0.12 })
+  : null;
+
+function watchReveal(scope) {
+  const nodes = (scope || document).querySelectorAll(".reveal:not(.in)");
+  if (RM || !io) { nodes.forEach((n) => n.classList.add("in")); return; }
+  nodes.forEach((n) => io.observe(n));
+}
+
+function countTo(node, to) {
+  if (!node) return;
+  if (RM) { node.textContent = String(to); return; }
+  const dur = 700, t0 = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);
+    node.textContent = String(Math.round(to * e));
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// ---- idle countdown --------------------------------------------------------
+
+function tickIdle() {
+  const node = $("stat-idle");
+  if (!node) return;
+  if (!unlocked) { node.textContent = "5:00"; node.classList.remove("warn", "danger"); return; }
+  const ms = Math.max(0, IDLE_MS - (Date.now() - idleAt));
+  const s = Math.ceil(ms / 1000);
+  node.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  node.classList.toggle("warn", s <= 60 && s > 15);
+  node.classList.toggle("danger", s <= 15);
+}
+
+// ---- intro ceremony --------------------------------------------------------
+
+function runIntro() {
+  const root = document.documentElement;
+  const intro = $("intro");
+  if (!intro) return;
+  if (!root.classList.contains("intro-on")) return;
+  root.classList.add("intro-run");
+  intro.classList.add("run");
+
+  const icv = $("intro-canvas");
+  const ictx = icv.getContext("2d");
+  const light = root.dataset.theme === "light";
+  const ringRGB = light ? "38,32,22" : "242,238,230";
+  let iraf = 0, running = true;
+  const t0 = performance.now();
+
+  function isize() {
+    const d = Math.min(2, window.devicePixelRatio || 1);
+    icv.width = Math.max(1, Math.round(window.innerWidth * d));
+    icv.height = Math.max(1, Math.round(window.innerHeight * d));
+    icv.style.width = window.innerWidth + "px";
+    icv.style.height = window.innerHeight + "px";
+    ictx.setTransform(d, 0, 0, d, 0, 0);
+  }
+
+  function iframe(now) {
+    if (!running) return;
+    const e = (now - t0) / 1000;
+    const W2 = window.innerWidth, H2 = window.innerHeight;
+    ictx.clearRect(0, 0, W2, H2);
+    const cx = W2 * 0.40, cy = H2 * 0.46, base = Math.min(W2, H2) * 0.52;
+    for (let r = 0; r < 6; r++) {
+      const appear = Math.min(1, Math.max(0, (e - r * 0.12) / 0.7));
+      if (appear <= 0) continue;
+      const ease = 1 - Math.pow(1 - appear, 3);
+      const rr = base * (0.34 + r * 0.135) * (0.86 + 0.14 * ease);
+      const rot = r * 0.35 + e * 0.08 * (r % 2 ? 1 : -1);
+      ictx.beginPath();
+      ictx.ellipse(cx, cy, rr, rr * 0.62, rot, 0, Math.PI * 2);
+      ictx.strokeStyle = "rgba(" + ringRGB + "," + (0.30 * ease).toFixed(3) + ")";
+      ictx.lineWidth = r === 0 ? 1.6 : 1;
+      ictx.stroke();
+    }
+    ictx.beginPath();
+    ictx.arc(cx, cy, 2.4, 0, Math.PI * 2);
+    ictx.fillStyle = "rgba(255,107,44," + (0.8 * Math.min(1, e)).toFixed(3) + ")";
+    ictx.fill();
+    iraf = requestAnimationFrame(iframe);
+  }
+
+  let done = false;
+  function finish() {
+    if (done) return;
+    done = true;
+    running = false;
+    cancelAnimationFrame(iraf);
+    try { localStorage.setItem("aegis-intro", "1"); } catch (e) {}
+    intro.classList.add("done");
+    setTimeout(() => {
+      root.classList.remove("intro-on", "intro-run");
+      intro.classList.remove("run", "done");
+    }, 620);
+  }
+
+  intro.addEventListener("click", finish);
+  window.addEventListener("keydown", finish, { once: true });
+  setTimeout(finish, 4600);
+  isize();
+  iraf = requestAnimationFrame(iframe);
+}
+
+// ---- state ----------------------------------------------------------------
+
+let statsShown = false;
+
+async function refreshState() {
+  const st = await api("GET", "/api/state");
+  $("foot-left").textContent = "vault: " + st.vault;
+  if (st.needs_keyfile) {
+    $("unlock-hint").textContent =
+      "This vault requires a keyfile. Relaunch the UI with --keyfile PATH.";
+    logEvent("info", "vault requires a keyfile");
+  }
+  if (!st.locked) {
+    unlocked = true;
+    setStatus(false);
+    $("unlock-view").hidden = true;
+    $("vault-view").hidden = false;
+    watchReveal();
+    await loadItems();
+  } else {
+    logEvent("info", "vault " + st.vault + " locked · awaiting master password");
+  }
+}
+
+// ---- unlock / lock ----------------------------------------------------------
+
+async function doUnlock() {
+  const password = $("unlock-password").value;
+  if (!password) return;
+  const err = $("unlock-error");
+  err.hidden = true;
+  try {
+    await api("POST", "/api/unlock", { password: password });
+    $("unlock-password").value = "";
+    unlocked = true;
+    setStatus(false);
+    $("unlock-view").hidden = true;
+    $("vault-view").hidden = false;
+    touch();
+    logEvent("ok", "unlocked");
+    watchReveal();
+    await loadItems();
+  } catch (e) {
+    err.textContent = e.message;
+    err.hidden = false;
+    logEvent("err", "unlock failed · " + e.message);
+  }
+}
+
+async function doLock(auto) {
+  try { await api("POST", "/api/lock"); } catch (e) { /* server gone */ }
+  unlocked = false;
+  items = [];
+  editingId = null;
+  statsShown = false;
+  $("items-list").replaceChildren();
+  $("editor").hidden = true;
+  $("vault-view").hidden = true;
+  $("audit-panel").hidden = true;
+  $("unlock-view").hidden = false;
+  setStatus(true);
+  tickIdle();
+  $("unlock-password").focus();
+  if (auto) { toast("auto-locked after inactivity"); logEvent("act", "auto-locked after inactivity"); }
+  else logEvent("act", "locked");
+}
+
+// ---- items --------------------------------------------------------------
+
+async function loadItems() {
+  const data = await api("GET", "/api/items");
+  items = data.items;
+  renderItems(true);
+  $("meta").textContent =
+    items.length + (items.length === 1 ? " item" : " items") +
+    (data.revision != null ? " \u00b7 rev " + data.revision : "");
+  if (!statsShown) {
+    countTo($("stat-entries"), items.length);
+    statsShown = true;
+  } else {
+    $("stat-entries").textContent = String(items.length);
+  }
+  $("stat-rev").textContent = data.revision != null ? String(data.revision) : "\u2013";
+  logEvent("info", "entries loaded \u00b7 " + items.length +
+    (data.revision != null ? " \u00b7 rev " + data.revision : ""));
+}
+
+function renderItems(animate) {
+  const q = $("search").value.trim().toLowerCase();
+  const list = $("items-list");
+  list.replaceChildren();
+  const sorters = {
+    name: (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+    modified: (a, b) => (b.modified || 0) - (a.modified || 0),
+    kind: (a, b) => (a.kind || "").localeCompare(b.kind || "") ||
+                    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+  };
+  const sorter = sorters[$("sort").value] || sorters.name;
+  const filtered = items
+    .filter((it) => !q || (it.name + " " + (it.username || "") + " " + (it.url || ""))
+      .toLowerCase().includes(q))
+    .sort(sorter);
+  $("empty-msg").hidden = filtered.length !== 0;
+  let n = 0;
+  for (const it of filtered) {
+    const card = itemCard(it);
+    if (animate && n < 24) {
+      card.classList.add("anim");
+      card.style.setProperty("--i", String(n));
+    }
+    list.appendChild(card);
+    n++;
+  }
+}
+
+function monogram(name) {
+  const letter = (name.trim()[0] || "?").toUpperCase();
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % 360;
+  const node = el("span", "mono", letter);
+  node.style.setProperty("--mc-h", String(hash));
+  return node;
+}
+
+function itemCard(it) {
+  const card = el("div", "item");
+
+  const head = el("div", "item-head");
+  head.appendChild(monogram(it.name));
+  head.appendChild(el("span", "item-name", it.name));
+  head.appendChild(el("span", "badge " + it.kind, it.kind));
+  const actions = el("div", "row");
+  const editBtn = el("button", "btn ghost small", "Edit");
+  editBtn.addEventListener("click", () => openEditor(it));
+  const delBtn = el("button", "btn ghost small danger", "Delete");
+  delBtn.addEventListener("click", () => deleteItem(it));
+  actions.append(editBtn, delBtn);
+  head.appendChild(actions);
+  card.appendChild(head);
+
+  if (it.kind === "login") {
+    const meta = el("div", "meta small muted");
+    if (it.username) {
+      meta.appendChild(el("span", null, "user: " + it.username));
+      const cu = el("button", "btn ghost small", "copy");
+      cu.addEventListener("click", () => copyText(it.username, "username copied"));
+      meta.appendChild(cu);
+    }
+    if (it.url) meta.appendChild(el("span", null, it.url));
+    if (it.modified) meta.appendChild(el("span", null, "modified " + relTime(it.modified)));
+    if (meta.childNodes.length) card.appendChild(meta);
+    if (it.password) card.appendChild(passwordRow(it.password));
+  } else {
+    const meta = el("div", "meta small muted");
+    if (it.modified) meta.appendChild(el("span", null, "modified " + relTime(it.modified)));
+    if (meta.childNodes.length) card.appendChild(meta);
+  }
+  if (it.notes) {
+    const notes = el("pre", "notes");
+    notes.textContent = it.notes;
+    card.appendChild(notes);
+  }
+
+  const atts = it.attachments || [];
+  const attRow = el("div", "atts");
+  for (const att of atts) {
+    const chip = el("span", "att");
+    chip.appendChild(el("span", "att-name", att.name));
+    chip.appendChild(el("span", "att-size", humanSize(att.size)));
+    const dl = el("button", "btn ghost small", "\u2193");
+    dl.title = "Download";
+    dl.addEventListener("click", () => downloadAtt(it.id, att));
+    const rm = el("button", "btn ghost small danger", "\u00d7");
+    rm.title = "Remove attachment";
+    rm.addEventListener("click", () => deleteAtt(it.id, att));
+    chip.append(dl, rm);
+    attRow.appendChild(chip);
+  }
+  const attachBtn = el("button", "btn ghost small", "+ file");
+  attachBtn.title = "Encrypt a file into this entry";
+  attachBtn.addEventListener("click", () => pickFile((f) => uploadTo(it.id, f)));
+  attRow.appendChild(attachBtn);
+  card.appendChild(attRow);
+
+  return card;
+}
+
+function passwordRow(pw) {
+  const row = el("div", "pw-row");
+  const field = el("code", "field-code", "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
+  const reveal = el("button", "btn ghost small", "Show");
+  reveal.addEventListener("click", () => {
+    const hidden = field.dataset.shown !== "1";
+    field.textContent = hidden ? pw : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+    field.dataset.shown = hidden ? "1" : "0";
+    reveal.textContent = hidden ? "Hide" : "Show";
+  });
+  const copy = el("button", "btn ghost small", "Copy");
+  copy.addEventListener("click", () => copyText(pw, "password copied"));
+  row.append(field, reveal, copy);
+  return row;
+}
+
+async function deleteItem(item) {
+  if (!confirm("Delete \u201c" + item.name + "\u201d?")) return;
+  try {
+    await api("DELETE", "/api/items/" + encodeURIComponent(item.id));
+    toast("deleted");
+    logEvent("act", "deleted \u00b7 " + item.name);
+    await loadItems();
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", "delete failed \u00b7 " + e.message);
+  }
+}
+
+// ---- attachments ------------------------------------------------------------
+
+let fileTarget = null;
+const fileInput = el("input");
+fileInput.type = "file";
+fileInput.hidden = true;
+document.body.appendChild(fileInput);
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (file && fileTarget) {
+    const cb = fileTarget;
+    fileTarget = null;
+    cb(file);
+  }
+});
+
+function pickFile(cb) {
+  fileTarget = cb;
+  fileInput.value = "";
+  fileInput.click();
+}
+
+async function uploadTo(itemId, file) {
+  toast("encrypting " + file.name + "\u2026");
+  logEvent("act", "encrypting \u00b7 " + file.name + " (" + humanSize(file.size) + ")");
+  try {
+    const res = await fetch(
+      "/api/items/" + encodeURIComponent(itemId) +
+      "/attachments?name=" + encodeURIComponent(file.name),
+      {
+        method: "POST",
+        headers: { "X-Aegis-Token": TOKEN, "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    toast("attached " + data.name + " (" + humanSize(data.size) + ")");
+    logEvent("ok", "attached \u00b7 " + data.name + " \u00b7 " + humanSize(data.size));
+    await loadItems();
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", "attach failed \u00b7 " + e.message);
+  }
+}
+
+async function uploadNew(file) {
+  try {
+    const data = await api("POST", "/api/items", { kind: "note", name: file.name });
+    await uploadTo(data.id, file);
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", "upload failed \u00b7 " + e.message);
+  }
+}
+
+async function downloadAtt(itemId, att) {
+  try {
+    const res = await fetch(
+      "/api/items/" + encodeURIComponent(itemId) +
+      "/attachments/" + encodeURIComponent(att.id),
+      { headers: { "X-Aegis-Token": TOKEN } });
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      throw new Error(data.error || ("HTTP " + res.status));
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = el("a");
+    a.href = url;
+    a.download = att.name || "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("downloaded " + att.name);
+    logEvent("ok", "decrypted + downloaded \u00b7 " + att.name);
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", "download failed \u00b7 " + e.message);
+  }
+}
+
+async function deleteAtt(itemId, att) {
+  if (!confirm("Remove attachment \u201c" + att.name + "\u201d?")) return;
+  try {
+    await api("DELETE",
+      "/api/items/" + encodeURIComponent(itemId) +
+      "/attachments/" + encodeURIComponent(att.id));
+    toast("attachment removed");
+    logEvent("act", "attachment removed \u00b7 " + att.name);
+    await loadItems();
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", "attachment removal failed \u00b7 " + e.message);
+  }
+}
+
+// ---- audit ------------------------------------------------------------------
+
+function runAudit() {
+  const panel = $("audit-panel");
+  const logins = items.filter((i) => i.kind === "login" && i.password);
+  const byPw = new Map();
+  for (const it of logins) {
+    if (!byPw.has(it.password)) byPw.set(it.password, []);
+    byPw.get(it.password).push(it);
+  }
+  const reused = [...byPw.values()].filter((g) => g.length > 1);
+  const weak = logins.filter((i) => entropyBits(i.password) < 50);
+
+  panel.replaceChildren();
+  const head = el("h3", null, "Audit");
+  panel.appendChild(head);
+  panel.appendChild(el("p", "muted small",
+    logins.length + " login passwords checked \u00b7 " +
+    reused.length + " reused \u00b7 " + weak.length + " weak"));
+
+  logEvent("info", "audit \u00b7 " + logins.length + " checked \u00b7 " +
+    reused.length + " reused \u00b7 " + weak.length + " weak");
+
+  if (!reused.length && !weak.length) {
+    panel.appendChild(el("p", "small", "\u2713 no reused or weak passwords found"));
+    return;
+  }
+
+  function group(title, entries) {
+    if (!entries.length) return;
+    const wrap = el("div", "audit-group");
+    wrap.appendChild(el("div", "small muted", title));
+    const list = el("div", "audit-list");
+    for (const it of entries) {
+      const chip = el("button", "audit-chip", it.name);
+      chip.addEventListener("click", () => {
+        $("search").value = it.name;
+        renderItems(false);
+        window.scrollTo({ top: 0, behavior: RM ? "auto" : "smooth" });
+      });
+      list.appendChild(chip);
+    }
+    wrap.appendChild(list);
+    panel.appendChild(wrap);
+  }
+
+  for (const groupEntries of reused) {
+    group("reused password (" + groupEntries.length + " entries):", groupEntries);
+  }
+  group("weak passwords (< 50 bits):", weak);
+}
+
+// ---- editor -------------------------------------------------------------
+
+function syncKindFields() {
+  const isNote = $("f-kind").value === "note";
+  document.querySelectorAll(".login-field").forEach((node) => {
+    node.hidden = isNote;
+  });
+}
+
+function openEditor(item) {
+  editingId = item ? item.id : null;
+  $("editor-title").textContent = item ? "Edit item" : "New item";
+  $("f-kind").value = item ? item.kind : "login";
+  $("f-name").value = item ? item.name : "";
+  $("f-username").value = (item && item.username) || "";
+  $("f-password").value = (item && item.password) || "";
+  $("f-url").value = (item && item.url) || "";
+  $("f-notes").value = (item && item.notes) || "";
+  syncKindFields();
+  updateMeter();
+  $("unlock-view").hidden = true;
+  $("vault-view").hidden = true;
+  $("editor").hidden = false;
+  $("f-name").focus();
+}
+
+function closeEditor() {
+  editingId = null;
+  $("editor").hidden = true;
+  $("vault-view").hidden = false;
+}
+
+async function saveItem() {
+  const body = {
+    kind: $("f-kind").value,
+    name: $("f-name").value.trim(),
+    username: $("f-username").value,
+    password: $("f-password").value,
+    url: $("f-url").value,
+    notes: $("f-notes").value,
+  };
+  if (!body.name) { toast("name is required", "err"); return; }
+  if (editingId) body.id = editingId;
+  try {
+    await api("POST", "/api/items", body);
+    toast("saved");
+    logEvent("ok", (editingId ? "updated \u00b7 " : "saved \u00b7 ") + body.name);
+    closeEditor();
+    await loadItems();
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", "save failed \u00b7 " + e.message);
+  }
+}
+
+// ---- generator panel --------------------------------------------------------
+
+function loadGenUI() {
+  const g = prefs.gen();
+  $("gen-length").value = g.length;
+  $("gen-len-out").textContent = g.length;
+  $("gen-upper").checked = !!g.uppercase;
+  $("gen-digits").checked = !!g.digits;
+  $("gen-symbols").checked = !!g.symbols;
+}
+
+function readGenUI() {
+  return {
+    length: parseInt($("gen-length").value, 10) || 20,
+    uppercase: $("gen-upper").checked,
+    digits: $("gen-digits").checked,
+    symbols: $("gen-symbols").checked,
+  };
+}
+
+async function generateNow() {
+  const opts = readGenUI();
+  prefs.setGen(opts);
+  try {
+    const data = await api("POST", "/api/generate", opts);
+    $("f-password").value = data.password;
+    updateMeter();
+    toast("generated " + opts.length + "-char password");
+    logEvent("act", "generated password \u00b7 " + opts.length + " chars");
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", "generate failed \u00b7 " + e.message);
+  }
+}
+
+// ---- theme ------------------------------------------------------------------
+
+function applyTheme(next, origin) {
+  const root = document.documentElement;
+  const commit = () => {
+    root.dataset.theme = next;
+    prefs.setTheme(next);
+  };
+  if (!document.startViewTransition || RM) {
+    commit();
+    scene.refresh();
+    logEvent("info", "theme \u00b7 " + next);
+    return;
+  }
+  const x = origin ? origin.x : window.innerWidth / 2;
+  const y = origin ? origin.y : 80;
+  const vt = document.startViewTransition(commit);
+  vt.ready.then(() => {
+    const r = Math.hypot(Math.max(x, window.innerWidth - x),
+                         Math.max(y, window.innerHeight - y));
+    root.animate(
+      { clipPath: ["circle(0px at " + x + "px " + y + "px)",
+                   "circle(" + r + "px at " + x + "px " + y + "px)"] },
+      { duration: 600, easing: "cubic-bezier(.4,0,.2,1)",
+        pseudoElement: "::view-transition-new(root)" }
+    );
+  }).catch(() => {});
+  scene.refresh();
+  logEvent("info", "theme \u00b7 " + next);
+}
+
+// ---- wiring ---------------------------------------------------------------
+
+function touch() { idleAt = Date.now(); }
+
+$("unlock-btn").addEventListener("click", doUnlock);
+$("unlock-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  doUnlock();
+});
+$("lock-btn").addEventListener("click", () => doLock(false));
+$("add-btn").addEventListener("click", () => openEditor(null));
+$("upload-btn").addEventListener("click", () => pickFile(uploadNew));
+$("audit-btn").addEventListener("click", () => {
+  const panel = $("audit-panel");
+  if (panel.hidden) { runAudit(); panel.hidden = false; }
+  else { panel.hidden = true; }
+});
+$("log-toggle").addEventListener("click", () => {
+  const panel = $("console-panel");
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    $("console-body").scrollTop = $("console-body").scrollHeight;
+  }
+});
+$("console-clear").addEventListener("click", () => {
+  $("console-body").replaceChildren();
+  $("console-count").textContent = "0 lines";
+});
+$("console-close").addEventListener("click", () => {
+  $("console-panel").hidden = true;
+});
+$("search").addEventListener("input", () => renderItems(false));
+$("sort").addEventListener("change", () => renderItems(false));
+$("cancel-btn").addEventListener("click", closeEditor);
+$("save-btn").addEventListener("click", saveItem);
+$("f-kind").addEventListener("change", syncKindFields);
+$("f-password").addEventListener("input", updateMeter);
+$("gen-btn").addEventListener("click", generateNow);
+$("gen-opts-btn").addEventListener("click", () => {
+  $("gen-panel").hidden = !$("gen-panel").hidden;
+});
+$("gen-length").addEventListener("input", () => {
+  $("gen-len-out").textContent = $("gen-length").value;
+});
+$("copy-pw-btn").addEventListener("click", () =>
+  copyText($("f-password").value, "password copied"));
+$("theme-btn").addEventListener("click", () => {
+  const rect = $("theme-btn").getBoundingClientRect();
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  applyTheme(next, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+});
+
+document.addEventListener("keydown", (e) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  if (e.key === "/" && !typing && unlocked) {
+    e.preventDefault();
+    $("search").focus();
+  } else if (e.key === "Escape") {
+    if (!$("editor").hidden && unlocked) closeEditor();
+    else if (!$("audit-panel").hidden) $("audit-panel").hidden = true;
+    else if (!$("console-panel").hidden) $("console-panel").hidden = true;
+  } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
+    e.preventDefault();
+    if (unlocked) doLock(false);
+  }
+});
+
+["pointermove", "keydown", "click", "touchstart"].forEach((ev) =>
+  document.addEventListener(ev, touch, { passive: true }));
+
+setInterval(() => {
+  if (unlocked && Date.now() - idleAt > IDLE_MS) doLock(true);
+}, 5000);
+setInterval(tickIdle, 1000);
+
+// ---- boot ------------------------------------------------------------------
+
+(async () => {
+  document.documentElement.dataset.theme = prefs.theme();
+  setStatus(true);
+  loadGenUI();
+  $("f-kind").value = "login";
+  syncKindFields();
+  updateMeter();
+  watchReveal();
+  tickIdle();
+  logEvent("info", "session up \u00b7 aegis v" + VERSION);
+  try { runIntro(); } catch (e) { logEvent("err", "ceremony fault: " + e.message); }
+  try {
+    await refreshState();
+  } catch (e) {
+    toast(e.message, "err");
+    logEvent("err", e.message);
+  }
+})();
+</script>
+</body>
+</html>
+</body>
+</html>

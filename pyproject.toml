@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aegis-vault"
+version = "0.4.0"
+description = "Portfolio-grade encrypted password vault: Argon2id + XChaCha20-Poly1305 with an authenticated header"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PyNaCl>=1.5"]
+
+[project.scripts]
+aegis = "aegis.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools]
+packages = ["aegis"]
+
+[tool.setuptools.package-data]
+aegis = ["index.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
